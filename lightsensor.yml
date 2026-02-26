@@ -1,6 +1,6 @@
 ---
 substitutions:
-  name: "lightsensor"
+  name: 'lightsensor'
   i2c_sda_pin: GPIO5
   i2c_scl_pin: GPIO6
   spi_clk_pin: GPIO18
@@ -9,13 +9,12 @@ substitutions:
   my_display_dc_pin: GPIO21
   my_display_reset_pin: GPIO20
 
-
 esphome:
-  name: "${name}"
+  name: '${name}'
   name_add_mac_suffix: false
   project:
-    name: "dudemcbacon.${name}"
-    version: "1.0"
+    name: 'dudemcbacon.${name}'
+    version: '1.0'
 
 esp32:
   board: esp32-c6-devkitc-1
@@ -38,22 +37,24 @@ wifi:
     ssid: !secret fallback_ap_ssid
     password: !secret fallback_ap_password
 
-
 captive_portal:
 
-dashboard_import:
-  package_import_url: github://dudemcbacon/pill-holder/project-template-esp32.yaml@main
+esp32_improv:
+  authorizer: none
+
+improv_serial:
+  next_url: https://example.com/project-template/manual?ip={{ip_address}}&name={{device_name}}&version={{esphome_version}}
 
 # I2C for BME280 and TSL2591
 i2c:
-  sda: "${i2c_sda_pin}"
-  scl: "${i2c_scl_pin}"
+  sda: '${i2c_sda_pin}'
+  scl: '${i2c_scl_pin}'
   frequency: 100khz
   scan: false
 
 spi:
-  clk_pin: "${spi_clk_pin}"
-  mosi_pin: "${spi_mosi_pin}"
+  clk_pin: '${spi_clk_pin}'
+  mosi_pin: '${spi_mosi_pin}'
 
 bme68x_bsec2_i2c:
   model: bme680
@@ -162,9 +163,9 @@ display:
   - platform: ili9xxx
     model: gc9a01a
     id: my_display
-    cs_pin: "${my_display_cs_pin}"
-    dc_pin: "${my_display_dc_pin}"
-    reset_pin: "${my_display_reset_pin}"
+    cs_pin: '${my_display_cs_pin}'
+    dc_pin: '${my_display_dc_pin}'
+    reset_pin: '${my_display_reset_pin}'
     rotation: 0
     invert_colors: true
 
