@@ -1,0 +1,46 @@
+---
+esphome:
+  name: fan-receiver
+
+esp32:
+  board: esp32doit-devkit-v1
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  password: ""
+
+ota:
+  - platform: esphome
+    password: ""
+
+wifi:
+  ssid: "Awesome."
+  password: "baconsandwich!12345"
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Fan-Receiver Fallback Hotspot"
+    password: "6L1BObOZ7w9O"
+
+captive_portal:
+
+remote_receiver:
+  pin:
+    number: GPIO14
+    inverted: True
+  dump:
+    - rc_switch
+  tolerance: 50%
+  filter: 250us
+  idle: 4ms
+
+binary_sensor:
+  - platform: remote_receiver
+    name: "Remote A"
+    rc_switch_raw:
+      code: '110111011010110110101000'
