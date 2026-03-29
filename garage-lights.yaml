@@ -1,10 +1,10 @@
 substitutions:
   name: 'garage-lights'
   south_on_pin: GPIO10
-  south_off_pin: GPIO2
-  north_on_pin: GPIO9
-  north_off_pin: GPIO3
-  press_duration: 100ms
+  south_off_pin: GPIO9
+  north_on_pin: GPIO8
+  north_off_pin: GPIO7
+  press_duration: 250ms
 
 esphome:
   name: '${name}'
