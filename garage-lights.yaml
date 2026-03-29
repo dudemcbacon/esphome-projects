@@ -1,0 +1,73 @@
+substitutions:
+  name: 'garage-lights'
+  south_on_pin: GPIO10
+  south_off_pin: GPIO2
+  north_on_pin: GPIO9
+  north_off_pin: GPIO3
+  press_duration: 100ms
+
+esphome:
+  name: '${name}'
+  name_add_mac_suffix: true
+  project:
+    name: 'dudemcbacon.${name}'
+    version: '1.0'
+
+esp32:
+  board: esp32-c3-devkitm-1
+  framework:
+    type: esp-idf
+
+api:
+ota:
+logger:
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: !secret fallback_ap_ssid
+    password: !secret fallback_ap_password
+
+captive_portal:
+
+# Define GPIO outputs
+output:
+  - platform: gpio
+    pin: ${south_on_pin}
+    id: output_south_on
+  - platform: gpio
+    pin: ${south_off_pin}
+    id: output_south_off
+  - platform: gpio
+    pin: ${north_on_pin}
+    id: output_north_on
+  - platform: gpio
+    pin: ${north_off_pin}
+    id: output_north_off
+
+# Define buttons that trigger the outputs for 500ms
+button:
+  - platform: output
+    name: 'Garage South Light On'
+    output: output_south_on
+    duration: ${press_duration}
+    icon: 'mdi:lightbulb-on'
+
+  - platform: output
+    name: 'Garage South Light Off'
+    output: output_south_off
+    duration: ${press_duration}
+    icon: 'mdi:lightbulb-off'
+
+  - platform: output
+    name: 'Garage North Light On'
+    output: output_north_on
+    duration: ${press_duration}
+    icon: 'mdi:lightbulb-on'
+
+  - platform: output
+    name: 'Garage North Light Off'
+    output: output_north_off
+    duration: ${press_duration}
+    icon: 'mdi:lightbulb-off'

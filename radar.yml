@@ -1,14 +1,15 @@
 ---
 substitutions:
   name: 'radar'
-  uart_rx_pin: GPIO6
-  uart_tx_pin: GPIO7
+  room: 'craftroom'
+  uart_rx_pin: GPIO5
+  uart_tx_pin: GPIO6
 
 esphome:
-  name: '${name}'
-  name_add_mac_suffix: true
+  name: '${name}-${room}'
+  name_add_mac_suffix: false
   project:
-    name: 'dudemcbacon.${name}'
+    name: 'dudemcbacon.${name}-${room}'
     version: '1.0'
 
 esp32:
