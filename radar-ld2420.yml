@@ -1,7 +1,7 @@
 ---
 substitutions:
   name: 'radar'
-  room: 'craftroom'
+  room: 'upsouth'
   uart_rx_pin: GPIO5
   uart_tx_pin: GPIO6
 
@@ -20,17 +20,21 @@ esp32:
 api:
 ota:
 logger:
+web_server:
 
 dashboard_import:
-  package_import_url: github://dudemcbacon/esphome-projects/radar.yaml
+  package_import_url: github://dudemcbacon/esphome-projects/radar-ld2420.yaml
 
 wifi:
-  ssid: !secret wifi_ssid
-  password: !secret wifi_password
+  ssid: !secret wifi_ssid_1
+  password: !secret wifi_password_1
+  output_power: 8.5
+  enable_btm: true # 802.11v BSS Transition Management
+  enable_rrm: true # 802.11k Radio Resource Management
 
   # Optional: captive portal for recovery
   ap:
-    ssid: !secret fallback_ap_ssid
+    ssid: 'esphome-${name}-${room}'
     password: !secret fallback_ap_password
 
 captive_portal:
