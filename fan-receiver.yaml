@@ -1,0 +1,28 @@
+---
+substitutions:
+  name: 'fan-receiver'
+  yamlfile: 'radar.yaml'
+  platform: 'esp-idf'
+  board: esp32doit-devkit-v1
+  name_add_mac_suffix: true
+  project_name: 'dudemcbacon.${name}'
+  project_version: '1.0'
+
+packages:
+  base: !include common/base.yaml
+
+remote_receiver:
+  pin:
+    number: GPIO14
+    inverted: True
+  dump:
+    - rc_switch
+  tolerance: 50%
+  filter: 250us
+  idle: 4ms
+
+binary_sensor:
+  - platform: remote_receiver
+    name: 'Remote A'
+    rc_switch_raw:
+      code: '110111011010110110101000'

@@ -1,39 +1,19 @@
 substitutions:
-  name: 'garage-lights'
-  north_on_pin: GPIO10
-  north_off_pin: GPIO9
-  south_on_pin: GPIO8
-  south_off_pin: GPIO7
-  press_duration: 500ms
-
-esphome:
-  name: '${name}'
-  name_add_mac_suffix: true
-  project:
-    name: 'dudemcbacon.${name}'
-    version: '1.0'
-
-esp32:
   board: esp32-c3-devkitm-1
-  framework:
-    type: esp-idf
+  name: 'garage-lights'
+  name_add_mac_suffix: true
+  north_off_pin: GPIO9
+  north_on_pin: GPIO10
+  platform: esp-idf
+  press_duration: 500ms
+  project_name: 'dudemcbacon.${name}'
+  project_version: '1.0'
+  south_off_pin: GPIO7
+  south_on_pin: GPIO8
+  yamlfile: garage-lights.yaml
 
-api:
-ota:
-logger:
-web_server:
-
-wifi:
-  ssid: !secret wifi_ssid_1
-  password: !secret wifi_password_1
-  enable_btm: true # 802.11v BSS Transition Management
-  enable_rrm: true # 802.11k Radio Resource Management
-
-  ap:
-    ssid: 'esphome-${name}'
-    password: !secret fallback_ap_password
-
-captive_portal:
+packages:
+  base: !include common/base.yaml
 
 # Define GPIO outputs
 output:

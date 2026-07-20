@@ -1,0 +1,46 @@
+---
+esphome:
+  name: '${name}'
+  name_add_mac_suffix: '${name_add_mac_suffix}'
+  project:
+    name: '${project_name}'
+    version: '${project_version}'
+
+esp32:
+  board: '${board}'
+  framework:
+    type: '${platform}'
+
+api:
+  encryption:
+    key: !secret api_key
+
+captive_portal:
+
+dashboard_import:
+  package_import_url: 'github://dudemcbacon/esphome-projects/${yamlfile}'
+
+esp32_improv:
+  authorizer: none
+
+improv_serial:
+  next_url: https://example.com/project-template/manual?ip={{ip_address}}&name={{device_name}}&version={{esphome_version}}
+
+logger:
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+web_server:
+
+wifi:
+  ssid: !secret wifi_ssid_1
+  password: !secret wifi_password_1
+  enable_btm: true # 802.11v BSS Transition Management
+  enable_rrm: true # 802.11k Radio Resource Management
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: '${name} Fallback Hotspot'
+    password: !secret wifi_fallback_password
