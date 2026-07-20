@@ -1,0 +1,133 @@
+---
+substitutions:
+  name: 'citrus-sensor'
+  name_add_mac_suffix: 'false'
+  project_name: 'dudemcbacon.${name}'
+  project_version: '1.0'
+  board: 'seeed_xiao_esp32c6'
+  platform: 'esp-idf'
+  yamlfile: 'citrus-sensor.yaml'
+
+  # I2C bus (XIAO ESP32-C6: D4/D5)
+  i2c_sda_pin: GPIO22
+  i2c_scl_pin: GPIO23
+
+  # Battery voltage on analog pin A0 (ADC1)
+  battery_pin: GPIO0
+
+  # DS18B20 one-wire pins (D3/D6/D7) - one sensor per pin
+  ds18b20_pin_1: GPIO21
+  ds18b20_pin_2: GPIO16
+  ds18b20_pin_3: GPIO17
+
+# Shared config: esphome/esp32/wifi/api/ota/logger/web_server/etc.
+packages:
+  base: !include common/base.yaml
+
+# All sensors + the OLED share a single I2C bus
+i2c:
+  sda: '${i2c_sda_pin}'
+  scl: '${i2c_scl_pin}'
+  frequency: 400khz
+  scan: true
+
+# One-wire buses for the DS18B20 sensors (one bus per GPIO)
+one_wire:
+  - platform: gpio
+    pin: '${ds18b20_pin_1}'
+    id: onewire_1
+  - platform: gpio
+    pin: '${ds18b20_pin_2}'
+    id: onewire_2
+  - platform: gpio
+    pin: '${ds18b20_pin_3}'
+    id: onewire_3
+
+# Font for the OLED (gfonts:// is downloaded at compile time - needs internet)
+font:
+  - file: 'gfonts://Roboto'
+    id: font_roboto
+    size: 14
+
+sensor:
+  # LTR390 - UV + ambient light
+  - platform: ltr390
+    address: 0x53
+    update_interval: 5s
+    uv_index:
+      name: 'LTR390 UV Index'
+      id: uv_index
+    uv:
+      name: 'LTR390 UV Counts'
+    light:
+      name: 'LTR390 Ambient Light'
+    ambient_light:
+      name: 'LTR390 Ambient Light Counts'
+
+  # SHT31-D - temperature + humidity
+  - platform: sht3xd
+    address: 0x44
+    update_interval: 5s
+    temperature:
+      name: 'SHT31 Temperature'
+      id: temp_sht
+    humidity:
+      name: 'SHT31 Humidity'
+      id: hum_sht
+
+  # VEML7700 - ambient light
+  - platform: veml7700
+    address: 0x10
+    update_interval: 5s
+    ambient_light:
+      name: 'VEML7700 Ambient Light'
+      id: lux_veml
+    actual_gain:
+      name: 'VEML7700 Actual Gain'
+
+  # BME280 - temperature, pressure, humidity
+  - platform: bme280_i2c
+    address: 0x76
+    update_interval: 5s
+    temperature:
+      name: 'BME280 Temperature'
+    pressure:
+      name: 'BME280 Pressure'
+    humidity:
+      name: 'BME280 Humidity'
+
+  # Battery voltage via analog pin + external divider
+  - platform: adc
+    pin: '${battery_pin}'
+    name: 'Battery Voltage'
+    id: battery_voltage
+    update_interval: 60s
+    attenuation: 12db
+    filters:
+      # Adjust multiplier to your resistor-divider ratio (2.0 = 1:1 divider)
+      - multiply: 2.0
+
+  # DS18B20 temperature sensors (one per one-wire bus)
+  - platform: dallas_temp
+    one_wire_id: onewire_1
+    name: 'DS18B20 Temperature 1'
+    update_interval: 10s
+  - platform: dallas_temp
+    one_wire_id: onewire_2
+    name: 'DS18B20 Temperature 2'
+    update_interval: 10s
+  - platform: dallas_temp
+    one_wire_id: onewire_3
+    name: 'DS18B20 Temperature 3'
+    update_interval: 10s
+
+display:
+  - platform: ssd1306_i2c
+    model: 'SSD1306 128x64'
+    address: 0x3C
+    id: oled
+    lambda: |-
+      it.printf(0, 0, id(font_roboto), "T: %.1f C", id(temp_sht).state);
+      it.printf(0, 16, id(font_roboto), "RH: %.0f %%", id(hum_sht).state);
+      it.printf(0, 32, id(font_roboto), "Lux: %.0f", id(lux_veml).state);
+      it.printf(0, 48, id(font_roboto), "UVI: %.1f  %.2fV", id(uv_index).state, id(battery_voltage).state);
