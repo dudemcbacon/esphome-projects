@@ -16,9 +16,9 @@ substitutions:
   battery_pin: GPIO0
 
   # DS18B20 one-wire pins (D3/D6/D7) - one sensor per pin
-  ds18b20_pin_1: GPIO21
-  ds18b20_pin_2: GPIO16
-  ds18b20_pin_3: GPIO17
+  ds18b20_pin_1: GPIO1
+  ds18b20_pin_2: GPIO2
+  ds18b20_pin_3: GPIO21
 
   # Buttons (D10/D8) - grounded when pressed
   deep_sleep_toggle_pin: GPIO18
@@ -26,6 +26,21 @@ substitutions:
 
   # LED (D9) - active high
   led_pin: GPIO20
+
+esphome:
+  on_boot:
+    then:
+      - output.turn_off: rf_switch_enable
+      - delay: 100ms
+      - output.turn_on: antenna_select
+
+output:
+  - platform: gpio
+    id: rf_switch_enable
+    pin: GPIO3
+  - platform: gpio
+    id: antenna_select
+    pin: GPIO14
 
 # Shared config: esphome/esp32/wifi/api/ota/logger/web_server/etc.
 packages:
@@ -37,6 +52,7 @@ i2c:
   scl: '${i2c_scl_pin}'
   frequency: 400khz
   scan: true
+  timeout: 10ms
 
 # One-wire buses for the DS18B20 sensors (one bus per GPIO)
 one_wire:
@@ -97,16 +113,15 @@ sensor:
     actual_gain:
       name: 'VEML7700 Actual Gain'
 
-  # BME280 - temperature, pressure, humidity
-  - platform: bme280_i2c
+  # BMP280 - temperature, pressure
+  - platform: bmp280_i2c
     address: 0x76
     update_interval: 5s
     temperature:
-      name: 'BME280 Temperature'
+      name: 'BMP280 Temperature'
+      oversampling: 16x
     pressure:
-      name: 'BME280 Pressure'
-    humidity:
-      name: 'BME280 Humidity'
+      name: 'BMP280 Pressure'
 
   # Battery voltage via analog pin + external divider
   - platform: adc
