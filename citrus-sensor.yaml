@@ -20,6 +20,13 @@ substitutions:
   ds18b20_pin_2: GPIO16
   ds18b20_pin_3: GPIO17
 
+  # Buttons (D10/D8) - grounded when pressed
+  deep_sleep_toggle_pin: GPIO18
+  push_metrics_button_pin: GPIO19
+
+  # LED (D9) - active high
+  led_pin: GPIO20
+
 # Shared config: esphome/esp32/wifi/api/ota/logger/web_server/etc.
 packages:
   base: !include common/base.yaml
@@ -42,6 +49,11 @@ one_wire:
   - platform: gpio
     pin: '${ds18b20_pin_3}'
     id: onewire_3
+
+deep_sleep:
+  id: deep_sleep_1
+  run_duration: 30s
+  sleep_duration: 5min
 
 # Font for the OLED (gfonts:// is downloaded at compile time - needs internet)
 font:
@@ -121,6 +133,37 @@ sensor:
     name: 'DS18B20 Temperature 3'
     update_interval: 10s
 
+binary_sensor:
+  # Buttons ground the pin when pressed
+  - platform: gpio
+    id: deep_sleep_toggle
+    name: 'Deep Sleep Toggle'
+    pin:
+      number: '${deep_sleep_toggle_pin}'
+      mode: INPUT_PULLUP
+      inverted: true
+    on_press:
+      - switch.turn_on: led
+      - deep_sleep.prevent: deep_sleep_1
+    on_release:
+      - switch.turn_off: led
+      - deep_sleep.allow: deep_sleep_1
+  - platform: gpio
+    id: push_metrics_button
+    name: 'Push Metrics Button'
+    pin:
+      number: '${push_metrics_button_pin}'
+      mode: INPUT_PULLUP
+      inverted: true
+
+switch:
+  # LED is active when the pin is driven high
+  - platform: gpio
+    id: led
+    name: 'LED'
+    pin:
+      number: '${led_pin}'
+
 display:
   - platform: ssd1306_i2c
     model: 'SSD1306 128x64'
@@ -131,3 +174,6 @@ display:
       it.printf(0, 16, id(font_roboto), "RH: %.0f %%", id(hum_sht).state);
       it.printf(0, 32, id(font_roboto), "Lux: %.0f", id(lux_veml).state);
       it.printf(0, 48, id(font_roboto), "UVI: %.1f  %.2fV", id(uv_index).state, id(battery_voltage).state);
+      if (id(deep_sleep_toggle).state) {
+        it.print(128, 0, id(font_roboto), TextAlign::TOP_RIGHT, "Deep Sleep Off");
+      }
