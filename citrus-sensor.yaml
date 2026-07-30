@@ -27,6 +27,10 @@ substitutions:
   # LED (D9) - active high
   led_pin: GPIO20
 
+  # Deep Sleep
+  run_duration: 5min
+  sleep_duration: 5min
+
 esphome:
   on_boot:
     then:
@@ -68,8 +72,8 @@ one_wire:
 
 deep_sleep:
   id: deep_sleep_1
-  run_duration: 30s
-  sleep_duration: 5min
+  run_duration: '${run_duration}'
+  sleep_duration: '${sleep_duration}'
 
 # Font for the OLED (gfonts:// is downloaded at compile time - needs internet)
 font:
@@ -153,6 +157,9 @@ binary_sensor:
   - platform: gpio
     id: deep_sleep_toggle
     name: 'Deep Sleep Toggle'
+    use_interrupt: true
+    filters:
+      - delayed_on: 10ms
     pin:
       number: '${deep_sleep_toggle_pin}'
       mode: INPUT_PULLUP
@@ -166,6 +173,9 @@ binary_sensor:
   - platform: gpio
     id: push_metrics_button
     name: 'Push Metrics Button'
+    use_interrupt: true
+    filters:
+      - delayed_on: 10ms
     pin:
       number: '${push_metrics_button_pin}'
       mode: INPUT_PULLUP
