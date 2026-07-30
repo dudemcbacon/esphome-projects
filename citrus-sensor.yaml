@@ -277,15 +277,15 @@ display:
           remaining = 0;
         it.printf(0, 64, id(font_roboto_small), TextAlign::BOTTOM_RIGHT, "%ds", remaining);
       }
-      // Check if connected and IP is valid
+      // Bottom-left of the screen: show the IP when connected, else "Not
+      // connected". BOTTOM_LEFT anchors the text to y=64 so it draws upward
+      // into the visible area (the countdown above shares this row on the right).
       if (network::is_connected() && id(local_ip_address).has_state()) {
         std::string ip = id(local_ip_address).state;
         if (!ip.empty() && ip != "0.0.0.0") {
-          // Print the IP address on the screen at X=0, Y=20
-          it.print(0, 64, id(font_roboto), ip.c_str());
+          it.print(0, 64, id(font_roboto_small), TextAlign::BOTTOM_LEFT, ip.c_str());
           return;
         }
       }
 
-      // Otherwise, print Not Connected
-      it.print(0, 64, id(font_roboto), "Not connected");
+      it.print(0, 64, id(font_roboto_small), TextAlign::BOTTOM_LEFT, "Not connected");
