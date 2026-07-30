@@ -8,6 +8,10 @@ substitutions:
   platform: 'esp-idf'
   yamlfile: 'citrus-sensor.yaml'
 
+  # Deep sleep: seconds the node stays awake each cycle before it sleeps.
+  # Referenced by deep_sleep.run_duration and the OLED sleep countdown.
+  deep_sleep_run_seconds: '30'
+
   # I2C bus (XIAO ESP32-C6: D4/D5)
   i2c_sda_pin: GPIO22
   i2c_scl_pin: GPIO23
@@ -33,10 +37,18 @@ substitutions:
 
 esphome:
   on_boot:
-    then:
-      - output.turn_off: rf_switch_enable
-      - delay: 100ms
-      - output.turn_on: antenna_select
+    - then:
+        - output.turn_off: rf_switch_enable
+        - delay: 100ms
+        - output.turn_on: antenna_select
+    # After all components are initialized, read every sensor and publish once.
+    # Runs on every wake (timer or wakeup_pin), so a button-triggered wake reads
+    # and publishes immediately instead of waiting for the poll intervals. This
+    # also covers the battery (60s interval), which otherwise never publishes
+    # inside the ${deep_sleep_run_seconds}s awake window.
+    - priority: -100
+      then:
+        - script.execute: read_and_publish
 
 output:
   - platform: gpio
@@ -74,16 +86,42 @@ deep_sleep:
   id: deep_sleep_1
   run_duration: '${run_duration}'
   sleep_duration: '${sleep_duration}'
+  # Wake the board when the push-metrics button is pressed (active-low).
+  #
+  # This block is intentionally COMMENTED OUT: ESPHome rejects it as written.
+  # On the ESP32-C6 only the LP-domain GPIOs can wake from deep sleep, so the
+  # only valid wakeup pins are GPIO0, GPIO1, GPIO2, GPIO3, GPIO4, GPIO5, GPIO6
+  # and GPIO7. GPIO19 (the current push_metrics_button_pin) is powered down
+  # while sleeping and fails validation with "Only pins 0-7 support wakeup".
+  #
+  # On the XIAO ESP32-C6 only GPIO0/GPIO1/GPIO2 (pads D0/D1/D2) from that range
+  # are broken out, and all three are currently used (battery ADC + the two
+  # DS18B20 sensors). To enable wake-on-button: move the button to one of
+  # GPIO0-GPIO7 (freeing whatever sensor is on it), update
+  # push_metrics_button_pin above, then uncomment the block below.
+  #
+  # wakeup_pin:
+  #   number: '${push_metrics_button_pin}'
+  #   mode: INPUT_PULLUP
+  #   inverted: true
+  # # If the button is still held at sleep time, wait for release instead of
+  # # sleeping and immediately waking again.
+  # wakeup_pin_mode: KEEP_AWAKE
 
 # Font for the OLED (gfonts:// is downloaded at compile time - needs internet)
 font:
   - file: 'gfonts://Roboto'
     id: font_roboto
-    size: 14
+    size: 12
+  # Smaller font for the deep-sleep countdown line at the bottom of the OLED
+  - file: 'gfonts://Roboto'
+    id: font_roboto_small
+    size: 10
 
 sensor:
   # LTR390 - UV + ambient light
   - platform: ltr390
+    id: ltr390_hub
     address: 0x53
     update_interval: 5s
     uv_index:
@@ -98,6 +136,7 @@ sensor:
 
   # SHT31-D - temperature + humidity
   - platform: sht3xd
+    id: sht3xd_hub
     address: 0x44
     update_interval: 5s
     temperature:
@@ -109,6 +148,7 @@ sensor:
 
   # VEML7700 - ambient light
   - platform: veml7700
+    id: veml7700_hub
     address: 0x10
     update_interval: 5s
     ambient_light:
@@ -119,6 +159,7 @@ sensor:
 
   # BMP280 - temperature, pressure
   - platform: bmp280_i2c
+    id: bmp280_hub
     address: 0x76
     update_interval: 5s
     temperature:
@@ -141,14 +182,17 @@ sensor:
   # DS18B20 temperature sensors (one per one-wire bus)
   - platform: dallas_temp
     one_wire_id: onewire_1
+    id: ds18b20_1
     name: 'DS18B20 Temperature 1'
     update_interval: 10s
   - platform: dallas_temp
     one_wire_id: onewire_2
+    id: ds18b20_2
     name: 'DS18B20 Temperature 2'
     update_interval: 10s
   - platform: dallas_temp
     one_wire_id: onewire_3
+    id: ds18b20_3
     name: 'DS18B20 Temperature 3'
     update_interval: 10s
 
@@ -180,6 +224,10 @@ binary_sensor:
       number: '${push_metrics_button_pin}'
       mode: INPUT_PULLUP
       inverted: true
+    # Read all sensors and publish right away. On a wakeup_pin-triggered wake
+    # this fires as the device comes up (in addition to the on_boot script).
+    on_press:
+      - script.execute: read_and_publish
 
 switch:
   # LED is active when the pin is driven high
@@ -189,16 +237,39 @@ switch:
     pin:
       number: '${led_pin}'
 
+# Reads every polling sensor and publishes its state immediately. Called on
+# wake (on_boot) and whenever the push-metrics button is pressed.
+script:
+  - id: read_and_publish
+    then:
+      - component.update: ltr390_hub
+      - component.update: sht3xd_hub
+      - component.update: veml7700_hub
+      - component.update: bmp280_hub
+      - component.update: battery_voltage
+      - component.update: ds18b20_1
+      - component.update: ds18b20_2
+      - component.update: ds18b20_3
+
 display:
   - platform: ssd1306_i2c
     model: 'SSD1306 128x64'
     address: 0x3C
     id: oled
     lambda: |-
+      // Four data rows in the 12px font (0/13/26/39) leave a clear bottom row.
       it.printf(0, 0, id(font_roboto), "T: %.1f C", id(temp_sht).state);
-      it.printf(0, 16, id(font_roboto), "RH: %.0f %%", id(hum_sht).state);
-      it.printf(0, 32, id(font_roboto), "Lux: %.0f", id(lux_veml).state);
-      it.printf(0, 48, id(font_roboto), "UVI: %.1f  %.2fV", id(uv_index).state, id(battery_voltage).state);
+      it.printf(0, 13, id(font_roboto), "RH: %.0f %%", id(hum_sht).state);
+      it.printf(0, 26, id(font_roboto), "Lux: %.0f", id(lux_veml).state);
+      it.printf(0, 39, id(font_roboto), "UVI: %.1f  %.2fV", id(uv_index).state, id(battery_voltage).state);
       if (id(deep_sleep_toggle).state) {
-        it.print(128, 0, id(font_roboto), TextAlign::TOP_RIGHT, "Deep Sleep Off");
+        // Deep sleep disabled via the toggle button
+        it.print(128, 0, id(font_roboto), TextAlign::TOP_RIGHT, "DSO");
+      } else {
+        // Deep sleep enabled: count down to the next sleep on the bottom row.
+        // run_duration is measured from boot, so remaining = run_duration - uptime.
+        int remaining = ${deep_sleep_run_seconds} - (int) (millis() / 1000);
+        if (remaining < 0)
+          remaining = 0;
+        it.printf(0, 64, id(font_roboto_small), TextAlign::BOTTOM_LEFT, "Sleep in %ds", remaining);
       }
