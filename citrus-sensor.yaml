@@ -8,10 +8,6 @@ substitutions:
   platform: 'esp-idf'
   yamlfile: 'citrus-sensor.yaml'
 
-  # Deep sleep: seconds the node stays awake each cycle before it sleeps.
-  # Referenced by deep_sleep.run_duration and the OLED sleep countdown.
-  deep_sleep_run_seconds: '30'
-
   # I2C bus (XIAO ESP32-C6: D4/D5)
   i2c_sda_pin: GPIO22
   i2c_scl_pin: GPIO23
@@ -20,19 +16,19 @@ substitutions:
   battery_pin: GPIO0
 
   # DS18B20 one-wire pins (D3/D6/D7) - one sensor per pin
-  ds18b20_pin_1: GPIO1
+  ds18b20_pin_1: GPIO19
   ds18b20_pin_2: GPIO2
   ds18b20_pin_3: GPIO21
 
   # Buttons (D10/D8) - grounded when pressed
   deep_sleep_toggle_pin: GPIO18
-  push_metrics_button_pin: GPIO19
+  push_metrics_button_pin: GPIO1
 
   # LED (D9) - active high
   led_pin: GPIO20
 
-  # Deep Sleep
-  run_duration: 5min
+  # Deep Sleep (in s)
+  run_duration: 300
   sleep_duration: 5min
 
 esphome:
@@ -45,7 +41,7 @@ esphome:
     # Runs on every wake (timer or wakeup_pin), so a button-triggered wake reads
     # and publishes immediately instead of waiting for the poll intervals. This
     # also covers the battery (60s interval), which otherwise never publishes
-    # inside the ${deep_sleep_run_seconds}s awake window.
+    # inside the ${run_duration}s awake window.
     - priority: -100
       then:
         - script.execute: read_and_publish
@@ -84,7 +80,7 @@ one_wire:
 
 deep_sleep:
   id: deep_sleep_1
-  run_duration: '${run_duration}'
+  run_duration: '${run_duration}s'
   sleep_duration: '${sleep_duration}'
   # Wake the board when the push-metrics button is pressed (active-low).
   #
@@ -100,13 +96,14 @@ deep_sleep:
   # GPIO0-GPIO7 (freeing whatever sensor is on it), update
   # push_metrics_button_pin above, then uncomment the block below.
   #
-  # wakeup_pin:
-  #   number: '${push_metrics_button_pin}'
-  #   mode: INPUT_PULLUP
-  #   inverted: true
-  # # If the button is still held at sleep time, wait for release instead of
-  # # sleeping and immediately waking again.
-  # wakeup_pin_mode: KEEP_AWAKE
+  wakeup_pin:
+    allow_other_uses: true
+    number: '${push_metrics_button_pin}'
+    mode: INPUT_PULLUP
+    inverted: true
+    # If the button is still held at sleep time, wait for release instead of
+    # sleeping and immediately waking again.
+  wakeup_pin_mode: KEEP_AWAKE
 
 # Font for the OLED (gfonts:// is downloaded at compile time - needs internet)
 font:
@@ -221,6 +218,7 @@ binary_sensor:
     filters:
       - delayed_on: 10ms
     pin:
+      allow_other_uses: true
       number: '${push_metrics_button_pin}'
       mode: INPUT_PULLUP
       inverted: true
@@ -251,6 +249,12 @@ script:
       - component.update: ds18b20_2
       - component.update: ds18b20_3
 
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      id: local_ip_address
+      internal: true
+
 display:
   - platform: ssd1306_i2c
     model: 'SSD1306 128x64'
@@ -268,8 +272,20 @@ display:
       } else {
         // Deep sleep enabled: count down to the next sleep on the bottom row.
         // run_duration is measured from boot, so remaining = run_duration - uptime.
-        int remaining = ${deep_sleep_run_seconds} - (int) (millis() / 1000);
+        int remaining = ${run_duration} - (int) (millis() / 1000);
         if (remaining < 0)
           remaining = 0;
-        it.printf(0, 64, id(font_roboto_small), TextAlign::BOTTOM_LEFT, "Sleep in %ds", remaining);
+        it.printf(0, 64, id(font_roboto_small), TextAlign::BOTTOM_RIGHT, "%ds", remaining);
       }
+      // Check if connected and IP is valid
+      if (network::is_connected() && id(local_ip_address).has_state()) {
+        std::string ip = id(local_ip_address).state;
+        if (!ip.empty() && ip != "0.0.0.0") {
+          // Print the IP address on the screen at X=0, Y=20
+          it.print(0, 64, id(font_roboto), ip.c_str());
+          return;
+        }
+      }
+
+      // Otherwise, print Not Connected
+      it.print(0, 64, id(font_roboto), "Not connected");
