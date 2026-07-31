@@ -170,11 +170,53 @@ sensor:
     pin: '${battery_pin}'
     name: 'Battery Voltage'
     id: battery_voltage
-    update_interval: 60s
-    attenuation: 12db
+    update_interval: 5s
+    attenuation: auto
+    unit_of_measurement: 'V'
+    device_class: voltage
+    state_class: measurement
+    accuracy_decimals: 3
     filters:
-      # Adjust multiplier to your resistor-divider ratio (2.0 = 1:1 divider)
+      # 1. Reverse the voltage divider mathematically
+      # Ratio = (R1 + R2) / R2 = (100k + 100k) / 100k = 2.0
+      # If you measured your resistors and they aren't exactly 100k,
+      # calculate the exact ratio and replace 2.0 here (e.g., 2.014).
       - multiply: 2.0
+
+      # 2. Software Multisampling / Noise Reduction
+      # This averages the last 10 readings to eliminate ADC jitter
+      - sliding_window_moving_average:
+          window_size: 10
+          send_every: 1
+
+      # Two 100k resistors form a 1:1 divider, so the pin sees half the pack
+      # voltage and `multiply: 2.0` should recover it in theory. But the
+      # ESP32-C6 ADC has large gain error (a real ~4.2V pack read ~5.4V), so we
+      # calibrate empirically: map raw pin voltage -> true pack voltage.
+      #   <raw_adc_volts> -> <multimeter_pack_volts>
+      # The 2.70 -> 4.20 point is derived from the 5.4V reading (5.4 / 2.0 =
+      # 2.70 at the pin). For best accuracy, replace these with your own
+      # measurements and add a second point at a lower charge level.
+      #- calibrate_linear:
+      #    - 0.0 -> 0.0
+      #    - 2.70 -> 4.20
+
+  # Battery percentage estimated from the pack voltage (rough Li-ion curve)
+  - platform: template
+    name: 'Battery Percentage'
+    id: battery_percentage
+    unit_of_measurement: '%'
+    device_class: battery
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: |-
+      float v = id(battery_voltage).state;
+      if (isnan(v))
+        return NAN;
+      // Linear approximation: 3.30V empty -> 4.20V full. Li-ion discharge is
+      // nonlinear, so this is only a gauge; tweak the endpoints as needed.
+      float pct = (v - 3.30f) / (4.20f - 3.30f) * 100.0f;
+      return pct < 0.0f ? 0.0f : (pct > 100.0f ? 100.0f : pct);
 
   # DS18B20 temperature sensors (one per one-wire bus)
   - platform: dallas_temp
@@ -245,6 +287,7 @@ script:
       - component.update: veml7700_hub
       - component.update: bmp280_hub
       - component.update: battery_voltage
+      - component.update: battery_percentage
       - component.update: ds18b20_1
       - component.update: ds18b20_2
       - component.update: ds18b20_3
@@ -261,11 +304,24 @@ display:
     address: 0x3C
     id: oled
     lambda: |-
+      // Format a sensor value, or "--" when it has no reading yet: a fresh
+      // sensor reads NaN until its first successful poll (or on a bus fault),
+      // which would otherwise render as "nan" on the screen.
+      auto fmt = [](float v, int prec, const char *unit) -> std::string {
+        if (isnan(v))
+          return std::string("--") + unit;
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%.*f%s", prec, v, unit);
+        return buf;
+      };
+
       // Four data rows in the 12px font (0/13/26/39) leave a clear bottom row.
-      it.printf(0, 0, id(font_roboto), "T: %.1f C", id(temp_sht).state);
-      it.printf(0, 13, id(font_roboto), "RH: %.0f %%", id(hum_sht).state);
-      it.printf(0, 26, id(font_roboto), "Lux: %.0f", id(lux_veml).state);
-      it.printf(0, 39, id(font_roboto), "UVI: %.1f  %.2fV", id(uv_index).state, id(battery_voltage).state);
+      it.printf(0, 0, id(font_roboto), "T: %s", fmt(id(temp_sht).state, 1, " C").c_str());
+      it.printf(0, 13, id(font_roboto), "RH: %s", fmt(id(hum_sht).state, 0, " %").c_str());
+      it.printf(0, 26, id(font_roboto), "Lux: %s", fmt(id(lux_veml).state, 0, "").c_str());
+      it.printf(0, 39, id(font_roboto), "UVI: %s  %s",
+                fmt(id(uv_index).state, 1, "").c_str(),
+                fmt(id(battery_percentage).state, 0, "%").c_str());
       if (id(deep_sleep_toggle).state) {
         // Deep sleep disabled via the toggle button
         it.print(128, 0, id(font_roboto), TextAlign::TOP_RIGHT, "DSO");
@@ -275,7 +331,7 @@ display:
         int remaining = ${run_duration} - (int) (millis() / 1000);
         if (remaining < 0)
           remaining = 0;
-        it.printf(0, 64, id(font_roboto_small), TextAlign::BOTTOM_RIGHT, "%ds", remaining);
+        it.printf(128, 64, id(font_roboto_small), TextAlign::BOTTOM_RIGHT, "%ds", remaining);
       }
       // Bottom-left of the screen: show the IP when connected, else "Not
       // connected". BOTTOM_LEFT anchors the text to y=64 so it draws upward
