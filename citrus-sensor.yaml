@@ -28,8 +28,14 @@ substitutions:
   led_pin: GPIO20
 
   # Deep Sleep (in s)
-  run_duration: 300
+  run_duration: 60
+  #sleep_duration: 5min
   sleep_duration: 5min
+
+globals:
+  - id: screen_text
+    type: std::string
+    initial_value: ''
 
 esphome:
   on_boot:
@@ -45,6 +51,9 @@ esphome:
     - priority: -100
       then:
         - script.execute: read_and_publish
+  on_shutdown:
+    - lambda: |-
+        id(oled).turn_off();
 
 output:
   - platform: gpio
@@ -171,7 +180,7 @@ sensor:
     name: 'Battery Voltage'
     id: battery_voltage
     update_interval: 5s
-    attenuation: auto
+    attenuation: 12db
     unit_of_measurement: 'V'
     device_class: voltage
     state_class: measurement
@@ -235,6 +244,11 @@ sensor:
     name: 'DS18B20 Temperature 3'
     update_interval: 10s
 
+button:
+  - platform: restart
+    id: restart_button
+    name: 'Device Restart'
+
 binary_sensor:
   # Buttons ground the pin when pressed
   - platform: gpio
@@ -268,6 +282,14 @@ binary_sensor:
     # this fires as the device comes up (in addition to the on_boot script).
     on_press:
       - script.execute: read_and_publish
+    on_multi_click:
+      - timing:
+          - ON for at least 3s
+        then:
+          - logger.log: 'Push Metrics Long Pressed!'
+          - lambda: 'id(screen_text) = "Long Pressed!";'
+          - component.update: oled
+          - button.press: restart_button
 
 switch:
   # LED is active when the pin is driven high
@@ -318,6 +340,7 @@ display:
       // Four data rows in the 12px font (0/13/26/39) leave a clear bottom row.
       it.printf(0, 0, id(font_roboto), "T: %s", fmt(id(temp_sht).state, 1, " C").c_str());
       it.printf(0, 13, id(font_roboto), "RH: %s", fmt(id(hum_sht).state, 0, " %").c_str());
+      it.printf(128, 13, id(font_roboto), TextAlign::TOP_RIGHT, id(screen_text).c_str());
       it.printf(0, 26, id(font_roboto), "Lux: %s", fmt(id(lux_veml).state, 0, "").c_str());
       it.printf(0, 39, id(font_roboto), "UVI: %s  %s",
                 fmt(id(uv_index).state, 1, "").c_str(),
