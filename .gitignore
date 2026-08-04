@@ -4,3 +4,37 @@
 /.esphome/
 /secrets.yaml
 /common/secrets.yaml
+
+# ---------------- KiCad ----------------
+# Auto-backup archives
+kicad/*/*-backups/
+
+# Per-user local state (UI layout, zoom, last-open sheet) -- NOT design data.
+# Note: .kicad_pro IS tracked; it holds net classes and design rules.
+*.kicad_prl
+
+# Lock files -- exist only while a project is open in KiCad
+*.lck
+~*.lck
+
+# Autosave and editor backups
+_autosave-*
+*.kicad_pcb-bak
+*.kicad_sch-bak
+*.kicad_pro-bak
+
+# Footprint/symbol caches
+fp-info-cache
+sym-lib-table-bak
+
+# Generated fabrication + report output (regenerable from the board)
+kicad/**/*.gbr
+kicad/**/*.gbrjob
+kicad/**/*.drl
+kicad/**/*.ipc
+kicad/**/*.pos
+kicad/**/*.d356
+kicad/**/*.net
+kicad/**/*-drc.rpt
+kicad/**/*-erc.rpt
+kicad/**/*.zip
