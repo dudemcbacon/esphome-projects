@@ -1,7 +1,7 @@
 ---
 substitutions:
   name: 'citrus-sensor'
-  name_add_mac_suffix: 'false'
+  name_add_mac_suffix: 'true'
   project_name: 'dudemcbacon.${name}'
   project_version: '1.0'
   board: 'seeed_xiao_esp32c6'
