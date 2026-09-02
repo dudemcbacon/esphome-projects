@@ -1,0 +1,284 @@
+---
+# One Eco-Worthy / JBD UP16S pack on a shared RS485 bus.
+#
+# Included once per battery from ecoworthy-bms.yaml. Everything here is
+# addressed by ${addr} (the pack's RS485 address, set by its DIP switches) and
+# labelled by ${pack}, so the four packs differ only in those two values.
+#
+# Sensor ids follow pack${pack}_* and are consumed by the bank-level aggregate
+# templates in ecoworthy-bms.yaml - renaming them breaks those lambdas.
+
+defaults:
+  addr: '${pack}'
+
+jbd_bms_up_pack:
+  - id: pack${pack}
+    jbd_bms_up_id: bms_bus
+    address: ${addr}
+    # 4 packs x ~180 ms of response time is ~1 s of bus occupancy per cycle at
+    # 9600 baud, so 10s leaves the bus ~90% idle.
+    update_interval: 10s
+
+sensor:
+  - platform: jbd_bms_up_pack
+    jbd_bms_up_pack_id: pack${pack}
+
+    total_voltage:
+      name: 'Pack ${pack} Voltage'
+      id: pack${pack}_voltage
+      device_id: pack${pack}_dev
+    current:
+      name: 'Pack ${pack} Current'
+      id: pack${pack}_current
+      device_id: pack${pack}_dev
+    # Signed: positive charging, negative discharging.
+    power:
+      name: 'Pack ${pack} Power'
+      id: pack${pack}_power
+      device_id: pack${pack}_dev
+    # Unsigned one-directional pairs, so a Riemann sum over either yields
+    # charged/discharged energy without needing a template to split power.
+    charging_power:
+      name: 'Pack ${pack} Charging Power'
+      device_id: pack${pack}_dev
+    discharging_power:
+      name: 'Pack ${pack} Discharging Power'
+      device_id: pack${pack}_dev
+
+    state_of_charge:
+      name: 'Pack ${pack} SOC'
+      id: pack${pack}_soc
+      device_id: pack${pack}_dev
+    state_of_health:
+      name: 'Pack ${pack} SOH'
+      device_id: pack${pack}_dev
+    capacity_remaining:
+      name: 'Pack ${pack} Remaining Capacity'
+      device_id: pack${pack}_dev
+    nominal_capacity:
+      name: 'Pack ${pack} Nominal Capacity'
+      device_id: pack${pack}_dev
+      entity_category: diagnostic
+    rated_capacity:
+      name: 'Pack ${pack} Rated Capacity'
+      device_id: pack${pack}_dev
+      entity_category: diagnostic
+    charging_cycles:
+      name: 'Pack ${pack} Charge Cycles'
+      device_id: pack${pack}_dev
+
+    mosfet_temperature:
+      name: 'Pack ${pack} MOSFET Temperature'
+      device_id: pack${pack}_dev
+    ambient_temperature:
+      name: 'Pack ${pack} Ambient Temperature'
+      device_id: pack${pack}_dev
+    average_temperature:
+      name: 'Pack ${pack} Average Cell Temperature'
+      device_id: pack${pack}_dev
+    # UP16S packs report 4 cell probes. temperature_5/6 exist in the component
+    # but stay unpublished on this hardware, so they are left out.
+    temperature_1:
+      name: 'Pack ${pack} Temperature 1'
+      device_id: pack${pack}_dev
+    temperature_2:
+      name: 'Pack ${pack} Temperature 2'
+      device_id: pack${pack}_dev
+    temperature_3:
+      name: 'Pack ${pack} Temperature 3'
+      device_id: pack${pack}_dev
+    temperature_4:
+      name: 'Pack ${pack} Temperature 4'
+      device_id: pack${pack}_dev
+
+    min_cell_voltage:
+      name: 'Pack ${pack} Min Cell Voltage'
+      device_id: pack${pack}_dev
+    max_cell_voltage:
+      name: 'Pack ${pack} Max Cell Voltage'
+      device_id: pack${pack}_dev
+    min_voltage_cell:
+      name: 'Pack ${pack} Min Voltage Cell'
+      device_id: pack${pack}_dev
+    max_voltage_cell:
+      name: 'Pack ${pack} Max Voltage Cell'
+      device_id: pack${pack}_dev
+    average_cell_voltage:
+      name: 'Pack ${pack} Average Cell Voltage'
+      device_id: pack${pack}_dev
+    # The single most useful pack-health number: sustained drift here is the
+    # early warning for a weak cell.
+    delta_cell_voltage:
+      name: 'Pack ${pack} Cell Imbalance'
+      id: pack${pack}_delta
+      device_id: pack${pack}_dev
+    cell_count:
+      name: 'Pack ${pack} Cell Count'
+      device_id: pack${pack}_dev
+      entity_category: diagnostic
+
+    # The BMS's live instruction to the charger/inverter. Queried against the
+    # master these come back aggregated across the whole bank rather than for
+    # this pack alone.
+    charge_voltage_limit:
+      name: 'Pack ${pack} Charge Voltage Limit'
+      device_id: pack${pack}_dev
+      entity_category: diagnostic
+    charge_current_limit:
+      name: 'Pack ${pack} Charge Current Limit'
+      device_id: pack${pack}_dev
+      entity_category: diagnostic
+    discharge_voltage_limit:
+      name: 'Pack ${pack} Discharge Voltage Limit'
+      device_id: pack${pack}_dev
+      entity_category: diagnostic
+    discharge_current_limit:
+      name: 'Pack ${pack} Discharge Current Limit'
+      device_id: pack${pack}_dev
+      entity_category: diagnostic
+
+    # Raw bitmasks behind the errors/protect/operation text sensors, kept as
+    # diagnostics so a fault can be decoded bit-exactly after the fact.
+    operation_status_bitmask:
+      name: 'Pack ${pack} Operation Status Bitmask'
+      device_id: pack${pack}_dev
+      entity_category: diagnostic
+    errors_bitmask:
+      name: 'Pack ${pack} Errors Bitmask'
+      device_id: pack${pack}_dev
+      entity_category: diagnostic
+    protect_bitmask:
+      name: 'Pack ${pack} Protect Bitmask'
+      device_id: pack${pack}_dev
+      entity_category: diagnostic
+    balancing_bitmask:
+      name: 'Pack ${pack} Balancing Bitmask'
+      device_id: pack${pack}_dev
+      entity_category: diagnostic
+
+    cell_voltage_1:
+      name: 'Pack ${pack} Cell 1'
+      device_id: pack${pack}_dev
+    cell_voltage_2:
+      name: 'Pack ${pack} Cell 2'
+      device_id: pack${pack}_dev
+    cell_voltage_3:
+      name: 'Pack ${pack} Cell 3'
+      device_id: pack${pack}_dev
+    cell_voltage_4:
+      name: 'Pack ${pack} Cell 4'
+      device_id: pack${pack}_dev
+    cell_voltage_5:
+      name: 'Pack ${pack} Cell 5'
+      device_id: pack${pack}_dev
+    cell_voltage_6:
+      name: 'Pack ${pack} Cell 6'
+      device_id: pack${pack}_dev
+    cell_voltage_7:
+      name: 'Pack ${pack} Cell 7'
+      device_id: pack${pack}_dev
+    cell_voltage_8:
+      name: 'Pack ${pack} Cell 8'
+      device_id: pack${pack}_dev
+    cell_voltage_9:
+      name: 'Pack ${pack} Cell 9'
+      device_id: pack${pack}_dev
+    cell_voltage_10:
+      name: 'Pack ${pack} Cell 10'
+      device_id: pack${pack}_dev
+    cell_voltage_11:
+      name: 'Pack ${pack} Cell 11'
+      device_id: pack${pack}_dev
+    cell_voltage_12:
+      name: 'Pack ${pack} Cell 12'
+      device_id: pack${pack}_dev
+    cell_voltage_13:
+      name: 'Pack ${pack} Cell 13'
+      device_id: pack${pack}_dev
+    cell_voltage_14:
+      name: 'Pack ${pack} Cell 14'
+      device_id: pack${pack}_dev
+    cell_voltage_15:
+      name: 'Pack ${pack} Cell 15'
+      device_id: pack${pack}_dev
+    cell_voltage_16:
+      name: 'Pack ${pack} Cell 16'
+      device_id: pack${pack}_dev
+
+binary_sensor:
+  - platform: jbd_bms_up_pack
+    jbd_bms_up_pack_id: pack${pack}
+    # Latching, not live: the component publishes true on the first successful
+    # decode and has no timeout path that ever publishes false. So this answers
+    # "did address ${addr} ever reply?" - which is exactly what you want while
+    # bringing the bus up - but it will not clear if the pack later drops off.
+    # For dropout alerting, watch for the pack's sensors going stale in HA.
+    online_status:
+      name: 'Pack ${pack} Online'
+      device_id: pack${pack}_dev
+    charging:
+      name: 'Pack ${pack} Charge MOSFET'
+      device_id: pack${pack}_dev
+    discharging:
+      name: 'Pack ${pack} Discharge MOSFET'
+      device_id: pack${pack}_dev
+    precharging:
+      name: 'Pack ${pack} Precharge MOSFET'
+      device_id: pack${pack}_dev
+    balancing:
+      name: 'Pack ${pack} Balancing'
+      device_id: pack${pack}_dev
+    heat:
+      name: 'Pack ${pack} Heater'
+      device_id: pack${pack}_dev
+    fan:
+      name: 'Pack ${pack} Fan'
+      device_id: pack${pack}_dev
+
+text_sensor:
+  - platform: jbd_bms_up_pack
+    jbd_bms_up_pack_id: pack${pack}
+    operation_status:
+      name: 'Pack ${pack} Operation Status'
+      device_id: pack${pack}_dev
+    errors:
+      name: 'Pack ${pack} Errors'
+      device_id: pack${pack}_dev
+    protect:
+      name: 'Pack ${pack} Protection'
+      device_id: pack${pack}_dev
+    device_model:
+      name: 'Pack ${pack} Model'
+      device_id: pack${pack}_dev
+      entity_category: diagnostic
+    # Per the protocol notes this field is only populated when talking to a pack
+    # directly; through the master it may stay empty for slave addresses.
+    firmware_version:
+      name: 'Pack ${pack} Firmware Version'
+      device_id: pack${pack}_dev
+      entity_category: diagnostic
+
+# These physically connect and disconnect the pack, so they are filed under
+# Configuration rather than sitting on the main dashboard.
+#
+# Two caveats worth knowing before using them:
+#   - The UP protocol may require the BMS to be in a test/tooling mode before it
+#     honours MOSFET writes, so a toggle can silently do nothing. The binary
+#     sensors above report the real state on the next poll - trust those, not the
+#     switch position.
+#   - Unlike a template switch, JbdBmsUpSwitch implements no setup()/restore, so
+#     booting the ESP never transmits a MOSFET command. Reflashing or power
+#     cycling the ESP will not drop your bank.
+switch:
+  - platform: jbd_bms_up_pack
+    jbd_bms_up_pack_id: pack${pack}
+    charging:
+      name: 'Pack ${pack} Charge MOSFET Control'
+      icon: 'mdi:battery-plus-outline'
+      device_id: pack${pack}_dev
+      entity_category: config
+    discharging:
+      name: 'Pack ${pack} Discharge MOSFET Control'
+      icon: 'mdi:battery-minus-outline'
+      device_id: pack${pack}_dev
+      entity_category: config

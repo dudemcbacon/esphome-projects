@@ -1,0 +1,264 @@
+---
+# Four Eco-Worthy 51.2V 50Ah rackmount packs (JBD UP16S BMS, 16S LFP) read over
+# a single RS485 bus by a Waveshare ESP32-S3-RS485-CAN.
+#
+# PROTOCOL
+# These packs do not speak standard Modbus. The BMS uses a JBD-proprietary
+# frame - function code 0x78, register window 0x1000-0x10a0, CRC16/Modbus with
+# the CRC sent LSB-first - at 9600 8N1. ESPHome's modbus_controller cannot talk
+# to it; syssi's jbd_bms_up component implements this exact framing and polls
+# each pack by its address byte, so one twisted pair reads all four.
+#
+# WIRING
+#   Waveshare A+  <->  battery RJ45 pin 7 (RS485_A)
+#   Waveshare B-  <->  battery RJ45 pin 8 (RS485_B)
+#   Waveshare GND <->  battery RJ45 shield/GND if the cable carries one
+# Set the board's RS485 jumper to 120R: the ESP sits at one end of the bus.
+#
+# WHICH PORT TO TAP - read this before wiring
+# Prefer a free *host* port on the MASTER pack (the RS485-1 / host-side RJ45,
+# the one an inverter or the USB-RS485 dongle would use). Eco-Worthy's own
+# parallel-comms docs describe the RS485 IN/OUT ports as the master<->slave
+# link, with the master owning all external communication. Tapping the IN/OUT
+# chain instead means:
+#   - You become a second master on a bus the pack master is already polling.
+#     RS485 has no arbitration, so your frames and its frames will collide;
+#     at worst you disrupt the inter-pack sync the BMS uses to aggregate
+#     current limits and balance SOC across the bank.
+#   - The framing on that link is the internal master/slave protocol, which is
+#     not documented and is not necessarily the 0x78 host protocol below.
+# The BMS's settable "RS485 protocol" option is not the lever it looks like.
+# Every value is an inverter emulation (0=Pylon, 1=Growatt, 2=Voltronic, 3=LXP,
+# 4=DEYE, 5=INVT, 6=SRNE, 9=PACE, ...) - there is no "native/UP" entry, because
+# the 0x78 protocol is not one of the selectable modes. It appears to sit
+# alongside them: in the reference capture the register reads 0 (Pylon) while
+# 0x78 polling worked on that same port. So the selector governs what the port
+# offers an *inverter*, not whether monitoring works, and changing it is neither
+# needed for nor expected to help this config.
+#
+# ADDRESSING
+# address == the pack's RS485 address from its DIP switches; master is 1 and
+# slaves count up. Per the protocol reverse-engineering, slave packs served
+# through the master answer the Pack Status frame - which is the only frame
+# this component reads - so all four addresses should report. If only address 1
+# ever comes online, see the Online binary sensors and the debug block below.
+substitutions:
+  board: esp32-s3-devkitc-1
+  name: ecoworthy-bms
+  name_add_mac_suffix: false
+  platform: esp-idf
+  project_name: 'dudemcbacon.${name}'
+  project_version: '1.0'
+  rs485_de_pin: GPIO21
+  rs485_rx_pin: GPIO18
+  rs485_tx_pin: GPIO17
+  yamlfile: ecoworthy-bms.yaml
+
+packages:
+  base: !include common/base.yaml
+  pack1: !include
+    file: common/ecoworthy-pack.yaml
+    vars:
+      pack: '1'
+  pack2: !include
+    file: common/ecoworthy-pack.yaml
+    vars:
+      pack: '2'
+  pack3: !include
+    file: common/ecoworthy-pack.yaml
+    vars:
+      pack: '3'
+  pack4: !include
+    file: common/ecoworthy-pack.yaml
+    vars:
+      pack: '4'
+
+# jbd_bms_up is not in any tagged release yet - it exists only on main - so the
+# ref cannot be a version tag. Swap in the commented SHA to freeze the build
+# against upstream changes.
+external_components:
+  - source: github://syssi/esphome-jbd-bms@main
+    # source: github://syssi/esphome-jbd-bms@99cf7c15dbc2056295c88abc3fae7c1d83e6fb7f
+    components: [jbd_bms_up, jbd_bms_up_pack]
+    refresh: 1d
+
+# One HA device per battery, so 176 entities arrive pre-grouped into four
+# cabinets instead of one wall.
+esphome:
+  devices:
+    - id: pack1_dev
+      name: 'Pack 1'
+    - id: pack2_dev
+      name: 'Pack 2'
+    - id: pack3_dev
+      name: 'Pack 3'
+    - id: pack4_dev
+      name: 'Pack 4'
+
+# The Waveshare module is ESP32-S3-WROOM-1 with 16MB flash; the default 4MB
+# assumption would waste most of it and tighten the OTA budget.
+esp32:
+  flash_size: 16MB
+
+# Do NOT put flow_control_pin here. jbd_bms_up drives GPIO21 itself, asserting
+# it around each write and flushing before releasing; declaring it on the uart
+# as well would give two owners to one pin.
+uart:
+  id: uart_bms
+  tx_pin: '${rs485_tx_pin}'
+  rx_pin: '${rs485_rx_pin}'
+  baud_rate: 9600
+  data_bits: 8
+  parity: NONE
+  stop_bits: 1
+  # A Pack Status response is ~172 bytes; the 256-byte default leaves very
+  # little headroom if the loop is late draining it.
+  rx_buffer_size: 512
+
+jbd_bms_up:
+  - id: bms_bus
+    uart_id: uart_bms
+    flow_control_pin: '${rs485_de_pin}'
+    rx_timeout: 150ms
+
+# Bank rollups. Each skips packs that have not reported yet rather than
+# poisoning the total with NaN, and returns {} while none have, so the entity
+# stays unknown instead of publishing a misleading 0.
+sensor:
+  - platform: template
+    name: 'Bank Current'
+    id: bank_current
+    unit_of_measurement: A
+    device_class: current
+    state_class: measurement
+    accuracy_decimals: 2
+    update_interval: 10s
+    lambda: |-
+      sensor::Sensor *packs[] = {id(pack1_current), id(pack2_current),
+                                 id(pack3_current), id(pack4_current)};
+      float sum = 0.0f;
+      int n = 0;
+      for (auto *s : packs) {
+        if (s->has_state() && !isnan(s->state)) {
+          sum += s->state;
+          n++;
+        }
+      }
+      if (n == 0) {
+        return {};
+      }
+      return sum;
+
+  - platform: template
+    name: 'Bank Power'
+    unit_of_measurement: W
+    device_class: power
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: 10s
+    lambda: |-
+      sensor::Sensor *packs[] = {id(pack1_power), id(pack2_power),
+                                 id(pack3_power), id(pack4_power)};
+      float sum = 0.0f;
+      int n = 0;
+      for (auto *s : packs) {
+        if (s->has_state() && !isnan(s->state)) {
+          sum += s->state;
+          n++;
+        }
+      }
+      if (n == 0) {
+        return {};
+      }
+      return sum;
+
+  # Mean rather than sum: the packs are paralleled, so bank SOC is the average
+  # of the individual SOCs, and averaging only what reported keeps a dropped
+  # pack from dragging the figure down.
+  - platform: template
+    name: 'Bank SOC'
+    unit_of_measurement: '%'
+    device_class: battery
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: 10s
+    lambda: |-
+      sensor::Sensor *packs[] = {id(pack1_soc), id(pack2_soc),
+                                 id(pack3_soc), id(pack4_soc)};
+      float sum = 0.0f;
+      int n = 0;
+      for (auto *s : packs) {
+        if (s->has_state() && !isnan(s->state)) {
+          sum += s->state;
+          n++;
+        }
+      }
+      if (n == 0) {
+        return {};
+      }
+      return sum / n;
+
+  - platform: template
+    name: 'Bank Voltage'
+    unit_of_measurement: V
+    device_class: voltage
+    state_class: measurement
+    accuracy_decimals: 2
+    update_interval: 10s
+    lambda: |-
+      sensor::Sensor *packs[] = {id(pack1_voltage), id(pack2_voltage),
+                                 id(pack3_voltage), id(pack4_voltage)};
+      float sum = 0.0f;
+      int n = 0;
+      for (auto *s : packs) {
+        if (s->has_state() && !isnan(s->state)) {
+          sum += s->state;
+          n++;
+        }
+      }
+      if (n == 0) {
+        return {};
+      }
+      return sum / n;
+
+  # Worst imbalance across the bank: one number to alert on instead of four.
+  - platform: template
+    name: 'Bank Worst Cell Imbalance'
+    unit_of_measurement: V
+    device_class: voltage
+    state_class: measurement
+    accuracy_decimals: 3
+    update_interval: 10s
+    lambda: |-
+      sensor::Sensor *packs[] = {id(pack1_delta), id(pack2_delta),
+                                 id(pack3_delta), id(pack4_delta)};
+      float worst = 0.0f;
+      int n = 0;
+      for (auto *s : packs) {
+        if (s->has_state() && !isnan(s->state)) {
+          if (n == 0 || s->state > worst) {
+            worst = s->state;
+          }
+          n++;
+        }
+      }
+      if (n == 0) {
+        return {};
+      }
+      return worst;
+
+# Bring-up aid: uncomment to dump every frame on the wire. Expect a TX of
+# 01 78 10 00 10 A0 00 00 7F B2 for address 1, answered by a ~172-byte frame
+# starting 01 78 10 00 10 A0 00 A2. Silence means wrong port, swapped A/B, or a
+# wrong address; a CRC warning in the log means the framing is right and the
+# electricals are marginal - check termination.
+# logger:
+#   level: DEBUG
+#
+# uart:
+#   id: uart_bms
+#   debug:
+#     direction: BOTH
+#     dummy_receiver: false
+#     after:
+#       delimiter: "\n"

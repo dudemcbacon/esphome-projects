@@ -27,10 +27,13 @@ substitutions:
   # LED (D9) - active high
   led_pin: GPIO20
 
-  # Deep Sleep (in s)
-  run_duration: 60
-  #sleep_duration: 5min
-  sleep_duration: 5min
+  # Deep Sleep defaults. Both are runtime-configurable from Home Assistant via
+  # the "Run Duration" / "Sleep Duration" number entities below, which persist
+  # their values in NVS across deep sleep and power loss. These substitutions
+  # are only the first-boot values (before anything has been stored) and the
+  # component-level fallback.
+  default_run_duration: '60' # seconds awake
+  default_sleep_duration: '5' # minutes asleep
 
 globals:
   - id: screen_text
@@ -47,7 +50,7 @@ esphome:
     # Runs on every wake (timer or wakeup_pin), so a button-triggered wake reads
     # and publishes immediately instead of waiting for the poll intervals. This
     # also covers the battery (60s interval), which otherwise never publishes
-    # inside the ${run_duration}s awake window.
+    # inside the awake window.
     - priority: -100
       then:
         - script.execute: read_and_publish
@@ -89,8 +92,12 @@ one_wire:
 
 deep_sleep:
   id: deep_sleep_1
-  run_duration: '${run_duration}s'
-  sleep_duration: '${sleep_duration}'
+  # Fallbacks only. The number entities below overwrite both of these while the
+  # device boots: template numbers set up at HARDWARE priority (800) and publish
+  # their restored value, while this component sets up at LATE (-100) and only
+  # then arms its sleep timer, so it always sees the configured values.
+  run_duration: '${default_run_duration}s'
+  sleep_duration: '${default_sleep_duration}min'
   # Wake the board when the push-metrics button is pressed (active-low).
   #
   # This block is intentionally COMMENTED OUT: ESPHome rejects it as written.
@@ -249,6 +256,49 @@ button:
     id: restart_button
     name: 'Device Restart'
 
+# Runtime-configurable deep sleep timings. Both are optimistic (so Home
+# Assistant can set them without a backing device value) and restored from NVS
+# on every wake, which is what makes them survive deep sleep.
+number:
+  # How long to stay awake each wake cycle. deep_sleep arms its sleep timer once
+  # during setup, so changing this while awake takes effect on the NEXT wake
+  # rather than lengthening or cutting short the current one.
+  - platform: template
+    id: run_duration_number
+    name: 'Run Duration'
+    icon: 'mdi:timer-play-outline'
+    entity_category: config
+    unit_of_measurement: 's'
+    optimistic: true
+    restore_value: true
+    initial_value: ${default_run_duration}
+    min_value: 10
+    max_value: 600
+    step: 5
+    mode: box
+    on_value:
+      - lambda: |-
+          id(deep_sleep_1).set_run_duration((uint32_t) lroundf(x * 1000.0f));
+
+  # How long to sleep between wakes. This one is read at sleep time, so a change
+  # applies to the very next sleep.
+  - platform: template
+    id: sleep_duration_number
+    name: 'Sleep Duration'
+    icon: 'mdi:timer-sand'
+    entity_category: config
+    unit_of_measurement: 'min'
+    optimistic: true
+    restore_value: true
+    initial_value: ${default_sleep_duration}
+    min_value: 1
+    max_value: 240
+    step: 1
+    mode: box
+    on_value:
+      - lambda: |-
+          id(deep_sleep_1).set_sleep_duration((uint32_t) lroundf(x * 60000.0f));
+
 binary_sensor:
   # Buttons ground the pin when pressed
   - platform: gpio
@@ -351,7 +401,7 @@ display:
       } else {
         // Deep sleep enabled: count down to the next sleep on the bottom row.
         // run_duration is measured from boot, so remaining = run_duration - uptime.
-        int remaining = ${run_duration} - (int) (millis() / 1000);
+        int remaining = (int) id(run_duration_number).state - (int) (millis() / 1000);
         if (remaining < 0)
           remaining = 0;
         it.printf(128, 64, id(font_roboto_small), TextAlign::BOTTOM_RIGHT, "%ds", remaining);

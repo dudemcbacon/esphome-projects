@@ -1,0 +1,223 @@
+---
+substitutions:
+  board: esp32-s3-devkitc-1
+  name: daly-bms
+  name_add_mac_suffix: false
+  platform: esp-idf
+  project_name: 'dudemcbacon.${name}'
+  project_version: '1.0'
+  rs485_de_pin: GPIO21
+  rs485_rx_pin: GPIO18
+  rs485_tx_pin: GPIO17
+  yamlfile: daly-bms.yaml
+
+packages:
+  base: !include common/base.yaml
+
+# Waveshare ESP32-S3-RS485-CAN: RS485 sits on GPIO17/18 with GPIO21 as the
+# transceiver TX-enable. flow_control_pin drives it as RTS in ESP-IDF's
+# UART_MODE_RS485_HALF_DUPLEX, so DE assertion is timed by hardware.
+uart:
+  id: uart_bms
+  tx_pin: '${rs485_tx_pin}'
+  rx_pin: '${rs485_rx_pin}'
+  flow_control_pin: '${rs485_de_pin}'
+  baud_rate: 9600
+  data_bits: 8
+  parity: NONE
+  stop_bits: 1
+  rx_buffer_size: 512 # 256 default drops the two temperature values on ESP32
+
+daly_bms:
+  id: bms
+  uart_id: uart_bms
+  update_interval: 10s
+  # address: 0x80 is the default; try 0x40 if the BMS never answers
+
+# The daly_bms platform already sets unit_of_measurement, device_class,
+# state_class, icon and accuracy_decimals for each sensor, so only name is set.
+sensor:
+  - platform: daly_bms
+    bms_daly_id: bms
+    # accuracy_decimals raised from the component default of 1: a 16S LFP pack
+    # sits between ~48 V and ~58 V, where 0.1 V is too coarse to read SOC from.
+    voltage:
+      name: 'Pack Voltage'
+      id: pack_voltage
+      accuracy_decimals: 2
+    # Left at 1 decimal on purpose - the wire format is (uint16 - 30000) / 10,
+    # so 0.1 A is the native resolution.
+    current:
+      name: 'Pack Current'
+      id: pack_current
+    battery_level:
+      name: 'SOC'
+    # device_class override works around an upstream bug: daly_bms/sensor.py
+    # ships this as unit=Ah with device_class=voltage, which HA rejects,
+    # costing long-term statistics. There is no HA device class for Ah.
+    remaining_capacity:
+      name: 'Remaining Capacity'
+      device_class: ''
+    cells_number:
+      name: 'Cell Count'
+    # Raised from the default 2 to 3 so these agree with the per-cell sensors
+    # (which default to 3) at the millivolt level.
+    max_cell_voltage:
+      name: 'Max Cell Voltage'
+      id: max_cell_v
+      accuracy_decimals: 3
+    max_cell_voltage_number:
+      name: 'Max Cell Number'
+    min_cell_voltage:
+      name: 'Min Cell Voltage'
+      id: min_cell_v
+      accuracy_decimals: 3
+    min_cell_voltage_number:
+      name: 'Min Cell Number'
+    max_temperature:
+      name: 'Max Temperature'
+    max_temperature_probe_number:
+      name: 'Max Temperature Probe'
+    min_temperature:
+      name: 'Min Temperature'
+    min_temperature_probe_number:
+      name: 'Min Temperature Probe'
+    temperature_1:
+      name: 'Temperature 1'
+    temperature_2:
+      name: 'Temperature 2'
+    cell_1_voltage:
+      name: 'Cell 1 Voltage'
+    cell_2_voltage:
+      name: 'Cell 2 Voltage'
+    cell_3_voltage:
+      name: 'Cell 3 Voltage'
+    cell_4_voltage:
+      name: 'Cell 4 Voltage'
+    cell_5_voltage:
+      name: 'Cell 5 Voltage'
+    cell_6_voltage:
+      name: 'Cell 6 Voltage'
+    cell_7_voltage:
+      name: 'Cell 7 Voltage'
+    cell_8_voltage:
+      name: 'Cell 8 Voltage'
+    cell_9_voltage:
+      name: 'Cell 9 Voltage'
+    cell_10_voltage:
+      name: 'Cell 10 Voltage'
+    cell_11_voltage:
+      name: 'Cell 11 Voltage'
+    cell_12_voltage:
+      name: 'Cell 12 Voltage'
+    cell_13_voltage:
+      name: 'Cell 13 Voltage'
+    cell_14_voltage:
+      name: 'Cell 14 Voltage'
+    cell_15_voltage:
+      name: 'Cell 15 Voltage'
+    cell_16_voltage:
+      name: 'Cell 16 Voltage'
+
+  # Signed power, so HA can chart charge/discharge in W
+  - platform: template
+    name: 'Pack Power'
+    unit_of_measurement: W
+    device_class: power
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: 10s
+    lambda: |-
+      if (isnan(id(pack_voltage).state) || isnan(id(pack_current).state)) {
+        return {};
+      }
+      return id(pack_voltage).state * id(pack_current).state;
+
+  # Cell imbalance - the single most useful pack-health number
+  - platform: template
+    name: 'Cell Imbalance'
+    unit_of_measurement: V
+    device_class: voltage
+    state_class: measurement
+    accuracy_decimals: 3
+    update_interval: 10s
+    lambda: |-
+      if (isnan(id(max_cell_v).state) || isnan(id(min_cell_v).state)) {
+        return {};
+      }
+      return id(max_cell_v).state - id(min_cell_v).state;
+
+text_sensor:
+  - platform: daly_bms
+    bms_daly_id: bms
+    status:
+      name: 'BMS Status'
+
+binary_sensor:
+  - platform: daly_bms
+    bms_daly_id: bms
+    charging_mos_enabled:
+      name: 'Charging MOS'
+      id: charging_mos
+    discharging_mos_enabled:
+      name: 'Discharging MOS'
+      id: discharging_mos
+
+# Raw DALY frames. Checksum is the sum of the 12 preceding bytes & 0xFF.
+# Byte 1 is 0x40 (addressed to the BMS), unlike the 0x80 host address used on
+# the read path; the checksums are tied to that 0x40.
+#
+# These toggles physically connect and disconnect the pack, hence:
+#   restore_mode: DISABLED - LOAD-BEARING, NOT COSMETIC. The switch default is
+#     ALWAYS_OFF, and TemplateSwitch::setup() calls turn_off() for any restore
+#     mode that yields an initial state - which fires turn_off_action. With the
+#     default this would transmit "MOSFET OFF" on every boot, OTA and power
+#     blip, disconnecting the battery each time the ESP restarts. DISABLED
+#     makes setup() do nothing.
+#   entity_category: config - files these under Configuration on the HA device
+#     page and keeps them out of voice-assistant exposure by default.
+#   assumed_state: true - renders discrete ON/OFF buttons instead of a toggle.
+#     The lambda reports the BMS's real state, which only catches up on the
+#     next poll, so a toggle would visibly snap back for up to update_interval.
+# optimistic is left false: the lambda reads real hardware state back, so
+# optimistic mode would only let the UI lie when a command fails to take.
+switch:
+  - platform: template
+    name: 'Charging MOS Control'
+    icon: 'mdi:battery-plus-outline'
+    entity_category: config
+    assumed_state: true
+    restore_mode: DISABLED
+    lambda: |-
+      if (!id(charging_mos).has_state()) {
+        return {};
+      }
+      return id(charging_mos).state;
+    turn_on_action:
+      - uart.write:
+          id: uart_bms
+          data: [0xA5, 0x40, 0xDA, 0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC8]
+    turn_off_action:
+      - uart.write:
+          id: uart_bms
+          data: [0xA5, 0x40, 0xDA, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC7]
+
+  - platform: template
+    name: 'Discharging MOS Control'
+    icon: 'mdi:battery-minus-outline'
+    entity_category: config
+    assumed_state: true
+    restore_mode: DISABLED
+    lambda: |-
+      if (!id(discharging_mos).has_state()) {
+        return {};
+      }
+      return id(discharging_mos).state;
+    turn_on_action:
+      - uart.write:
+          id: uart_bms
+          data: [0xA5, 0x40, 0xD9, 0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC7]
+    turn_off_action:
+      - uart.write:
+          id: uart_bms
+          data: [0xA5, 0x40, 0xD9, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC6]
